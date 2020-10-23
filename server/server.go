@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 
 	"github.com/OJOMB/url-analyser/config"
 	"github.com/OJOMB/url-analyser/htmlanalyser"
@@ -81,36 +82,42 @@ func (s *Server) handleAnalyseURL() http.HandlerFunc {
 			http.Error(w, "Received malformed JSON from client", http.StatusBadRequest)
 			return
 		}
-		url := analyseURLRequest.URL
-		s.logger.Printf("Received URL from client: %s", url)
+		userInputtedURL := analyseURLRequest.URL
+		s.logger.Printf("Received URL from client: %s", userInputtedURL)
 
-		// constructed request to user submitted URL
-		resp, err := http.Get(url)
+		u, err := url.Parse(userInputtedURL)
 		if err != nil {
-			s.logger.Printf("Failed GET request to URL: %s. Got error: %s", url, err.Error())
-			http.Error(w, "Failed to retrieve data from request to url: "+url, http.StatusInternalServerError)
+			http.Error(w, "Received unparseable URL from client", http.StatusBadRequest)
 			return
 		}
-		s.logger.Printf("Received response from: %s", url)
+
+		// constructed request to user submitted URL
+		resp, err := http.Get(u.String())
+		if err != nil {
+			s.logger.Printf("Failed GET request to URL: %s. Got error: %s", u.String(), err.Error())
+			http.Error(w, "Failed to retrieve data from request to url: "+u.String(), http.StatusInternalServerError)
+			return
+		}
+		s.logger.Printf("Received response from: %s", u.String())
 
 		respBody, err := ioutil.ReadAll(resp.Body)
 		defer resp.Body.Close()
 		if err == io.EOF {
-			s.logger.Printf("Received empty response from request to URL: %s", url)
+			s.logger.Printf("Received empty response from request to URL: %s", u.String())
 			s.logger.Print("Forwarding empty response to client")
 			fmt.Fprintf(w, "")
 			return
 		} else if err != nil {
-			s.logger.Printf("Received unreadable response from URL: %s. Encountered error: %s", url, err.Error())
-			http.Error(w, "Received unreadable response from URL: "+url, http.StatusInternalServerError)
+			s.logger.Printf("Received unreadable response from URL: %s. Encountered error: %s", u.String(), err.Error())
+			http.Error(w, "Received unreadable response from URL: "+u.String(), http.StatusInternalServerError)
 			return
 		}
 		document := string(respBody)
 		s.logger.Print(document)
-		analyser := htmlanalyser.New(document, url, s.logger)
+		analyser := htmlanalyser.New(document, u, s.logger)
 		err = analyser.Analyse()
 		if err != nil {
-			http.Error(w, "Received unparseable HTML from URL: "+url, http.StatusInternalServerError)
+			http.Error(w, "Received unparseable HTML from URL: "+u.String(), http.StatusInternalServerError)
 			return
 		}
 
