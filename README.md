@@ -4,6 +4,9 @@ A simple web app for running some basic analysis on a given URL
 
 Built with React and Golang!
 
+I've prebundled the frontend code, so the program should run on:
+```go run main.go```
+
 # Please Read
 
 I'm very sorry but I ran out of time with this one. 
