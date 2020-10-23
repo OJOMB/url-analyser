@@ -167,7 +167,24 @@ var UrlInputBox = /*#__PURE__*/function (_Component3) {
     _this2 = _super3.call.apply(_super3, [this].concat(args));
 
     _defineProperty(_assertThisInitialized(_this2), "state", {
-      userInput: ""
+      userInput: "",
+      // regex for matching urls with mandatory protocol
+      urlRegex: /^(http:\/\/www\.|https:\/\/www\.|http:\/\/|https:\/\/)[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,5}(:[0-9]{1,5})?(\/.*)?$/,
+      buttonDisabled: true
+    });
+
+    _defineProperty(_assertThisInitialized(_this2), "handleChange", function (e) {
+      if (_this2.state.urlRegex.exec(e.target.value)) {
+        _this2.setState({
+          userInput: e.target.value,
+          buttonDisabled: false
+        });
+      } else {
+        _this2.setState({
+          userInput: e.target.value,
+          buttonDisabled: true
+        });
+      }
     });
 
     return _this2;
@@ -180,26 +197,24 @@ var UrlInputBox = /*#__PURE__*/function (_Component3) {
 
       return /*#__PURE__*/_react["default"].createElement("div", {
         className: "url-input"
-      }, /*#__PURE__*/_react["default"].createElement("form", null, /*#__PURE__*/_react["default"].createElement("div", {
-        className: "align-middle"
-      }, /*#__PURE__*/_react["default"].createElement("input", {
+      }, /*#__PURE__*/_react["default"].createElement("img", {
+        src: "http://localhost:8080/public/url-analyser.png",
+        alt: "URL Analyser"
+      }), /*#__PURE__*/_react["default"].createElement("form", null, /*#__PURE__*/_react["default"].createElement("div", null, /*#__PURE__*/_react["default"].createElement("input", {
         type: "text",
         className: "form-control form-control-lg",
         size: 70,
         placeholder: "Enter URL",
-        onChange: function onChange(e) {
-          return _this3.setState({
-            userInput: e.target.value
-          });
-        }
+        onChange: this.handleChange
       }), /*#__PURE__*/_react["default"].createElement("input", {
         className: "submit-btn",
         type: "submit",
         value: "Analyse URL",
+        disabled: this.state.buttonDisabled,
         onClick: function onClick() {
           return _this3.props.onSubmit(_this3.state.userInput);
         }
-      }))));
+      })), /*#__PURE__*/_react["default"].createElement("p", null, "Please make sure to specify the protocol with the URL"), /*#__PURE__*/_react["default"].createElement("p", null, "i.e. 'http://www.example.com' rather than 'www.example.com' or 'example.com'")));
     }
   }]);
 

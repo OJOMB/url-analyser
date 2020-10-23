@@ -79,27 +79,55 @@ class UrlAnalyser extends Component {
 
 class UrlInputBox extends Component {
     state = {
-        userInput: ""
+        userInput: "",
+        // regex for matching urls with mandatory protocol
+        urlRegex: /^(http:\/\/www\.|https:\/\/www\.|http:\/\/|https:\/\/)[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,5}(:[0-9]{1,5})?(\/.*)?$/,
+        buttonDisabled: true
     };
     render() {
         return (
             <div className="url-input">
+                <img src="http://localhost:8080/public/url-analyser.png" alt="URL Analyser" /> 
                 <form>
-                    <div className="align-middle">
+                    <div>
                         <input
                             type="text"
                             className="form-control form-control-lg"
                             size={70}
                             placeholder="Enter URL"
-                            onChange={(e) => this.setState({ userInput: e.target.value })}
+                            onChange={this.handleChange}
                         />
-                        <input className="submit-btn" type="submit" value="Analyse URL" onClick={() => this.props.onSubmit(this.state.userInput)}/> 
+                        <input 
+                            className="submit-btn"
+                            type="submit"
+                            value="Analyse URL"
+                            disabled={this.state.buttonDisabled}
+                            onClick={() => this.props.onSubmit(this.state.userInput)}/> 
                     </div>
+                    <p>Please make sure to specify the protocol with the URL</p>
+                    <p>i.e. 'http://www.example.com' rather than 'www.example.com' or 'example.com'</p>
                 </form>
             </div>
         );
     };
-}
+    handleChange = (e) => {
+        if (this.state.urlRegex.exec(e.target.value)) {
+            this.setState(
+                {
+                    userInput: e.target.value,
+                    buttonDisabled: false
+                }
+            );
+        } else {
+            this.setState(
+                {
+                    userInput: e.target.value,
+                    buttonDisabled: true
+                }
+            );
+        }
+    };
+ }
 
 class NavBar extends Component {
     render() {
