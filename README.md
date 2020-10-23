@@ -5,7 +5,13 @@ A simple web app for running some basic analysis on a given URL
 Built with React and Golang!
 
 I've prebundled the frontend code, so the program should run on:
-```go run main.go```
+
+```
+go build
+./url-analyser
+```
+
+and be accessible on localhost:8080/
 
 # Please Read
 
