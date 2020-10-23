@@ -78,8 +78,8 @@ func (hpa *HTMLPageAnalyser) Analyse() error {
 	// If this check fails we know that each of the various analysis methods will also fail,
 	// so we should fail fast and let the caller know we received unparseable HTML.
 	// if this first pass succeeds we continue with running the analysis.
-	// This has the added benefit of simplifying the analysis function code
-	// since we can avoid defensive programming safe in the knowledge that parsing won't fail
+	// This has the added benefit of simplifying the analysis functions code
+	// since we can avoid defensive programming, safe in the knowledge that parsing won't fail
 	hpa.logger.Print("Running test pass on html document")
 	z := html.NewTokenizer(strings.NewReader(hpa.document))
 	for {
@@ -96,6 +96,7 @@ func (hpa *HTMLPageAnalyser) Analyse() error {
 	}
 	hpa.logger.Print("Test pass on html document SUCCEEDED")
 
+	// test pass has succeeded, so now we run the full suite of analysis
 	hpa.HTMLVersion = hpa.getHTMLDocType()
 	hpa.PageTitle = hpa.getPageTitle()
 	hpa.HeadingsByLevel = hpa.getHeadingsCountByLevel()
