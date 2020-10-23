@@ -25,6 +25,7 @@ class UrlAnalyser extends Component {
         if (this.state.showResult) {
             return (
                 <ResultViewer 
+                    url={this.state.url}
                     result={this.state.result}
                     onCloseResult={this.handleCloseResults}
                 />
@@ -168,7 +169,7 @@ class ResultViewer extends Component {
         return (
             <div className="results-viewer">
                 <h1>URL Analysis</h1>
-                <p><b>URL:</b> <a href={this.props.result.url}>{this.props.result.url}</a></p>
+                <p><b>URL:</b> <a href={this.props.url}>{this.props.url}</a></p>
                 <p><b>Page Title:</b> {this.props.result.pageTitle}</p>
                 <p><b>Links:</b></p>
                 <ul>

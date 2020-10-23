@@ -4,8 +4,10 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 
 	"golang.org/x/net/html"
 )
@@ -52,8 +54,9 @@ func (hc *HeadingsCount) Add(h string) {
 
 // HTMLPageAnalyser encapsulates all the required by the client
 type HTMLPageAnalyser struct {
+	mu                *sync.Mutex
 	logger            *log.Logger
-	URL               string `json:"url"`
+	URL               *url.URL
 	document          string
 	HTMLVersion       string         `json:"htmlVersion"`
 	PageTitle         string         `json:"pageTitle"`
@@ -64,8 +67,10 @@ type HTMLPageAnalyser struct {
 }
 
 // New returns the address of a fresh instance of HTMLPageAnalyser
-func New(doc, url string, logger *log.Logger) *HTMLPageAnalyser {
+func New(doc string, url *url.URL, logger *log.Logger) *HTMLPageAnalyser {
+
 	return &HTMLPageAnalyser{
+		mu:       &sync.Mutex{},
 		logger:   logger,
 		URL:      url,
 		document: doc,
@@ -97,24 +102,40 @@ func (hpa *HTMLPageAnalyser) Analyse() error {
 	hpa.logger.Print("Test pass on html document SUCCEEDED")
 
 	// test pass has succeeded, so now we run the full suite of analysis
-	hpa.HTMLVersion = hpa.getHTMLDocType()
-	hpa.PageTitle = hpa.getPageTitle()
-	hpa.HeadingsByLevel = hpa.getHeadingsCountByLevel()
-	hpa.LinksByType = hpa.getLinksCount()
-	hpa.InaccessibleLinks = hpa.getCountOfInaccessibleLinks()
-	hpa.LoginForm = hpa.hasLoginForm()
+	analysisMethods := []func(){
+		hpa.getHTMLDocType,
+		hpa.getPageTitle,
+		hpa.getHeadingsCountByLevel,
+		hpa.getLinksCount,
+		hpa.getCountOfInaccessibleLinks,
+		hpa.hasLoginForm,
+	}
+
+	var wg sync.WaitGroup
+	for _, method := range analysisMethods {
+		wg.Add(1)
+		go func(fn func()) {
+			fn()
+			wg.Done()
+		}(method)
+	}
+	wg.Wait()
 
 	return nil
 }
 
 // DetermineHTMLDocType searches for a doctype tag and parses out the version
-func (hpa *HTMLPageAnalyser) getHTMLDocType() string {
+func (hpa *HTMLPageAnalyser) getHTMLDocType() {
+	hpa.logger.Printf("getHTMLDocType START")
 	z := html.NewTokenizer(strings.NewReader(hpa.document))
+
+	var htmlVersion string
 	for {
 		tokenType := z.Next()
 		if tokenType == html.ErrorToken {
 			// we know this error will be io.EOF due to success of test pass
-			return "Document contains no doctype element"
+			htmlVersion = "Document contains no doctype element"
+			break
 		} else if tokenType == html.DoctypeToken {
 			// case when we encounter a DocType Token Type
 			docTypeToken := z.Token()
@@ -122,7 +143,8 @@ func (hpa *HTMLPageAnalyser) getHTMLDocType() string {
 
 			switch {
 			case docTypeTokenValue == "html":
-				return "HTML 5.0"
+				htmlVersion = "HTML 5.0"
+
 			case strings.Contains(docTypeTokenValue, "-//w3c//dtd html"):
 				// we have a legacy doc type < 5
 				i := strings.Index(docTypeTokenValue, "-//w3c//dtd html")
@@ -133,7 +155,8 @@ func (hpa *HTMLPageAnalyser) getHTMLDocType() string {
 				} else {
 					stop = start + 4
 				}
-				return "HTML " + docTypeTokenValue[start:stop]
+				htmlVersion = "HTML " + docTypeTokenValue[start:stop]
+
 			case strings.Contains(docTypeTokenValue, "-//w3c//dtd xhtml"):
 				// we have an xhtml doc type
 				i := strings.Index(docTypeTokenValue, "-//w3c//dtd xhtml")
@@ -144,37 +167,56 @@ func (hpa *HTMLPageAnalyser) getHTMLDocType() string {
 				} else {
 					stop = start + 4
 				}
-				return "XHTML " + docTypeTokenValue[start:stop]
+				hpa.mu.Lock()
+				htmlVersion = "XHTML " + docTypeTokenValue[start:stop]
 			}
+			break
 		}
 	}
+	hpa.mu.Lock()
+	defer hpa.mu.Unlock()
+	hpa.HTMLVersion = htmlVersion
+	hpa.logger.Printf("getHTMLDocType DONE")
 }
 
 // getPageTitle searches for and returns the value of the first title element it finds
-func (hpa *HTMLPageAnalyser) getPageTitle() string {
+func (hpa *HTMLPageAnalyser) getPageTitle() {
+	hpa.logger.Printf("getPageTitle START")
 	z := html.NewTokenizer(strings.NewReader(hpa.document))
+
+	var title string
 	for {
 		tokenType := z.Next()
 		if tokenType == html.ErrorToken {
-			return "Document contains no title element"
+			// we know this error will be io.EOF due to success of test pass
+			title = "Document contains no title element"
+			break
 		} else if tokenType == html.StartTagToken {
 			Token := z.Token()
 			if strings.HasPrefix(Token.Data, "title") {
 				z.Next()
-				return z.Token().Data
+				title = z.Token().Data
+				break
 			}
 		}
 	}
+	hpa.mu.Lock()
+	defer hpa.mu.Unlock()
+	hpa.PageTitle = title
+	hpa.logger.Printf("getPageTitle DONE")
 }
 
 // getHeadingsCountByLevel returns a HeadingsCount representing the frequency of occurences of each heading
 // tag by level found in the given html document
-func (hpa *HTMLPageAnalyser) getHeadingsCountByLevel() *HeadingsCount {
-	var headingsCount HeadingsCount
+func (hpa *HTMLPageAnalyser) getHeadingsCountByLevel() {
+	hpa.logger.Printf("getHeadingsCountByLevel START")
 	z := html.NewTokenizer(strings.NewReader(hpa.document))
+
+	var headingsCount HeadingsCount
 	for {
 		tokenType := z.Next()
 		if tokenType == html.ErrorToken {
+			// we know this error will be io.EOF due to success of test pass
 			break
 		} else if tokenType == html.StartTagToken {
 			if token := z.Token(); len(token.Data) > 1 {
@@ -183,17 +225,23 @@ func (hpa *HTMLPageAnalyser) getHeadingsCountByLevel() *HeadingsCount {
 			}
 		}
 	}
-	return &headingsCount
+	hpa.mu.Lock()
+	defer hpa.mu.Unlock()
+	hpa.HeadingsByLevel = &headingsCount
+	hpa.logger.Printf("getHeadingsCountByLevel DONE")
 }
 
-// getLinksCount returns aHeadingsCount containing the frequency of occurences internal/external
+// getLinksCount sets HeadingsByLevel containing the frequency of occurences internal/external
 // hyperlinks found in the given html document
-func (hpa *HTMLPageAnalyser) getLinksCount() *LinksCount {
-	var LinksCount LinksCount
+func (hpa *HTMLPageAnalyser) getLinksCount() {
+	hpa.logger.Printf("getLinksCount START")
 	z := html.NewTokenizer(strings.NewReader(hpa.document))
+
+	var LinksCount LinksCount
 	for {
 		tokenType := z.Next()
 		if tokenType == html.ErrorToken {
+			// we know this error will be io.EOF due to success of test pass
 			break
 		} else if tokenType == html.StartTagToken {
 			token := z.Token()
@@ -206,9 +254,15 @@ func (hpa *HTMLPageAnalyser) getLinksCount() *LinksCount {
 					}
 				}
 				if hrefVal == "" {
+					// <a> tag without href is not a link
 					continue
 				}
-				if hpa.isLinkExternal(hrefVal) {
+				u, err := url.Parse(hrefVal)
+				if err != nil {
+					hpa.logger.Printf("whilst counting internal/external links, failed to parse href url: %s", hrefVal)
+					continue
+				}
+				if hpa.isLinkExternal(u) {
 					LinksCount.Add("external")
 				} else {
 					LinksCount.Add("internal")
@@ -216,13 +270,16 @@ func (hpa *HTMLPageAnalyser) getLinksCount() *LinksCount {
 			}
 		}
 	}
-	return &LinksCount
+	hpa.mu.Lock()
+	defer hpa.mu.Unlock()
+	hpa.LinksByType = &LinksCount
+	hpa.logger.Printf("getLinksCount DONE")
 }
 
-// isLinkExternal naively determines whether a link is to an external domain
-// by checking an href value to see if it references a local path
-func (hpa *HTMLPageAnalyser) isLinkExternal(href string) bool {
-	if strings.HasPrefix(href, "/") || strings.HasPrefix(href, "#") || strings.HasPrefix(href, hpa.URL) {
+// isLinkExternal determines whether a link is to an external domain
+// by checking an href value to see if it references a local path or a separate domain
+func (hpa *HTMLPageAnalyser) isLinkExternal(href *url.URL) bool {
+	if href.Host == "" || href.Host == hpa.URL.Host {
 		return false
 	}
 	return true
@@ -231,16 +288,20 @@ func (hpa *HTMLPageAnalyser) isLinkExternal(href string) bool {
 // hasLoginForm makes a best effort attempt to determine whether the given html document
 // contains a login form. We naively assume that a page contains a login form if it is found
 // to contain input elements of type 'password' and 'submit'.
-func (hpa *HTMLPageAnalyser) hasLoginForm() bool {
+func (hpa *HTMLPageAnalyser) hasLoginForm() {
+	hpa.logger.Printf("hasLoginForm START")
 	z := html.NewTokenizer(strings.NewReader(hpa.document))
+
 	hasSubmit := false
 	hasPassword := false
+	hasLogin := false
 	for {
 		if hasSubmit && hasPassword {
-			return true
+			hasLogin = true
 		}
 		tokenType := z.Next()
 		if tokenType == html.ErrorToken {
+			// we know this error will be io.EOF due to success of test pass
 			break
 		} else if tokenType == html.StartTagToken {
 			token := z.Token()
@@ -260,15 +321,21 @@ func (hpa *HTMLPageAnalyser) hasLoginForm() bool {
 			}
 		}
 	}
-	return false
+	hpa.mu.Lock()
+	defer hpa.mu.Unlock()
+	hpa.LoginForm = hasLogin
+	hpa.logger.Printf("hasLoginForm DONE")
 }
 
-func (hpa *HTMLPageAnalyser) getCountOfInaccessibleLinks() int {
+func (hpa *HTMLPageAnalyser) getCountOfInaccessibleLinks() {
+	hpa.logger.Printf("getCountOfInaccessibleLinks START")
 	z := html.NewTokenizer(strings.NewReader(hpa.document))
+
 	inaccessibleLinks := 0
 	for {
 		tokenType := z.Next()
 		if tokenType == html.ErrorToken {
+			// we know this error will be io.EOF due to success of test pass
 			break
 		} else if tokenType == html.StartTagToken {
 			token := z.Token()
@@ -280,26 +347,32 @@ func (hpa *HTMLPageAnalyser) getCountOfInaccessibleLinks() int {
 						break
 					}
 				}
-				if hrefVal == "" || strings.HasPrefix(hrefVal, "#") {
-					// we know hrefs that begin with # are for the current page which must be accessible
+				if hrefVal == "" {
+					// <a> tag without href is not a link
 					continue
 				}
-				var url string
-				if hpa.isLinkExternal(hrefVal) {
-					url = hrefVal
-				} else {
-					url = hpa.URL + hrefVal
-				}
-				resp, err := http.Get(url)
+				u, err := url.Parse(hrefVal)
 				if err != nil {
-					hpa.logger.Printf("Whilst testing accessibility of links, GET request to: %s failed", url)
+					hpa.logger.Printf("Encountered unparseable URL in href: %s", err.Error())
+					inaccessibleLinks++
 					continue
 				}
-				if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
+				if !hpa.isLinkExternal(u) {
+					u = hpa.URL.ResolveReference(u)
+				}
+				resp, err := http.Get(u.String())
+				if err != nil {
+					hpa.logger.Printf("Whilst testing accessibility of links, GET request to: %s failed", u.String())
+					continue
+				}
+				if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 					inaccessibleLinks++
 				}
 			}
 		}
 	}
-	return inaccessibleLinks
+	hpa.mu.Lock()
+	defer hpa.mu.Unlock()
+	hpa.InaccessibleLinks = inaccessibleLinks
+	hpa.logger.Printf("getCountOfInaccessibleLinks DONE")
 }
