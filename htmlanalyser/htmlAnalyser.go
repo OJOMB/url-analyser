@@ -54,7 +54,6 @@ func (hc *HeadingsCount) Add(h string) {
 
 // HTMLPageAnalyser encapsulates all the required by the client
 type HTMLPageAnalyser struct {
-	mu                *sync.Mutex
 	logger            *log.Logger
 	URL               *url.URL
 	document          string
@@ -70,7 +69,6 @@ type HTMLPageAnalyser struct {
 func New(doc string, url *url.URL, logger *log.Logger) *HTMLPageAnalyser {
 
 	return &HTMLPageAnalyser{
-		mu:       &sync.Mutex{},
 		logger:   logger,
 		URL:      url,
 		document: doc,
@@ -167,14 +165,11 @@ func (hpa *HTMLPageAnalyser) getHTMLDocType() {
 				} else {
 					stop = start + 4
 				}
-				hpa.mu.Lock()
 				htmlVersion = "XHTML " + docTypeTokenValue[start:stop]
 			}
 			break
 		}
 	}
-	hpa.mu.Lock()
-	defer hpa.mu.Unlock()
 	hpa.HTMLVersion = htmlVersion
 	hpa.logger.Printf("getHTMLDocType DONE")
 }
@@ -200,8 +195,6 @@ func (hpa *HTMLPageAnalyser) getPageTitle() {
 			}
 		}
 	}
-	hpa.mu.Lock()
-	defer hpa.mu.Unlock()
 	hpa.PageTitle = title
 	hpa.logger.Printf("getPageTitle DONE")
 }
@@ -225,8 +218,6 @@ func (hpa *HTMLPageAnalyser) getHeadingsCountByLevel() {
 			}
 		}
 	}
-	hpa.mu.Lock()
-	defer hpa.mu.Unlock()
 	hpa.HeadingsByLevel = &headingsCount
 	hpa.logger.Printf("getHeadingsCountByLevel DONE")
 }
@@ -270,8 +261,6 @@ func (hpa *HTMLPageAnalyser) getLinksCount() {
 			}
 		}
 	}
-	hpa.mu.Lock()
-	defer hpa.mu.Unlock()
 	hpa.LinksByType = &LinksCount
 	hpa.logger.Printf("getLinksCount DONE")
 }
@@ -321,14 +310,16 @@ func (hpa *HTMLPageAnalyser) hasLoginForm() {
 			}
 		}
 	}
-	hpa.mu.Lock()
-	defer hpa.mu.Unlock()
 	hpa.LoginForm = hasLogin
 	hpa.logger.Printf("hasLoginForm DONE")
 }
 
 func (hpa *HTMLPageAnalyser) getCountOfInaccessibleLinks() {
 	hpa.logger.Printf("getCountOfInaccessibleLinks START")
+
+	accessible := make(chan bool)
+	noOfLinksBeingChecked := 0
+
 	z := html.NewTokenizer(strings.NewReader(hpa.document))
 
 	inaccessibleLinks := 0
@@ -360,19 +351,36 @@ func (hpa *HTMLPageAnalyser) getCountOfInaccessibleLinks() {
 				if !hpa.isLinkExternal(u) {
 					u = hpa.URL.ResolveReference(u)
 				}
-				resp, err := http.Get(u.String())
-				if err != nil {
-					hpa.logger.Printf("Whilst testing accessibility of links, GET request to: %s failed", u.String())
-					continue
-				}
-				if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-					inaccessibleLinks++
-				}
+				noOfLinksBeingChecked++
+				go hpa.checkAccessibiltyOfLink(u, accessible)
 			}
 		}
 	}
-	hpa.mu.Lock()
-	defer hpa.mu.Unlock()
+
+	hpa.logger.Printf("noOfLinksBeingChecked: %d", noOfLinksBeingChecked)
+
+	for i := 0; i < noOfLinksBeingChecked; i++ {
+		result := <-accessible
+		if !result {
+			inaccessibleLinks++
+		}
+	}
+	close(accessible)
+
 	hpa.InaccessibleLinks = inaccessibleLinks
+	hpa.logger.Println("getCountOfInaccessibleLinks released the lock")
 	hpa.logger.Printf("getCountOfInaccessibleLinks DONE")
+}
+
+func (hpa *HTMLPageAnalyser) checkAccessibiltyOfLink(u *url.URL, accessible chan bool) {
+	resp, err := http.Get(u.String())
+	var result bool = true
+	if err != nil {
+		hpa.logger.Printf("Whilst testing accessibility of links, GET request to: %s failed", u.String())
+		result = false
+	} else if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		result = false
+	}
+
+	accessible <- result
 }

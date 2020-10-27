@@ -41,7 +41,7 @@ class UrlAnalyser extends Component {
         }
     };
     handleSubmit = (e) => {
-        this.setState({loadingResult: true, url: e.url})
+        this.setState({loadingResult: true, url: e})
         console.log("sending request to backend with data: " + e)
         return fetch(
             '/analyseUrl',

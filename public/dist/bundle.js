@@ -88,7 +88,7 @@ var UrlAnalyser = /*#__PURE__*/function (_Component2) {
     _defineProperty(_assertThisInitialized(_this), "handleSubmit", function (e) {
       _this.setState({
         loadingResult: true,
-        url: e.url
+        url: e
       });
 
       console.log("sending request to backend with data: " + e);
